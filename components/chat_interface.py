@@ -98,15 +98,29 @@ def generate_response(question: str, df: pd.DataFrame) -> str:
     # Total spending
     if 'total' in question_lower and 'spend' in question_lower:
         if 'vendor' in question_lower:
-            top_vendor = df.iloc[0]
-            return f"📊 Found {len(df)} vendors. Top spender: **{top_vendor.iloc[0]}** with **₼{top_vendor.iloc[1]:,.2f}**"
+            # Safely access vendor spending data
+            if len(df) > 0 and len(df.columns) >= 2:
+                top_vendor = df.iloc[0]
+                vendor_name = top_vendor.iloc[0]
+                vendor_spend = top_vendor.iloc[1]
+                return f"📊 Found {len(df)} vendors. Top spender: **{vendor_name}** with **₼{vendor_spend:,.2f}**"
+            else:
+                return f"📊 Found {len(df)} vendors. Top spender details unavailable."
         else:
-            total = df.iloc[0, 0] if len(df) > 0 else 0
-            return f"💰 Total spending: **₼{total:,.2f}**"
+            if len(df) > 0 and len(df.columns) > 0:
+                total = df.iloc[0, 0]
+                return f"💰 Total spending: **₼{total:,.2f}**"
+            else:
+                return "💰 Unable to calculate total spending from query results."
     
     # HHI / Concentration
     if 'hhi' in question_lower or 'concentration' in question_lower:
-        high_conc = df[df.get('concentration_level', df.get('concentration', '')) == 'high'] if 'concentration_level' in df.columns or 'concentration' in df.columns else pd.DataFrame()
+        high_conc = pd.DataFrame()
+        if 'concentration_level' in df.columns:
+            high_conc = df[df['concentration_level'] == 'high']
+        elif 'concentration' in df.columns:
+            high_conc = df[df['concentration'] == 'high']
+        
         if len(high_conc) > 0:
             return f"⚠️ Found **{len(high_conc)}** segments with high concentration (HHI > 2500). Review recommended."
         else:
