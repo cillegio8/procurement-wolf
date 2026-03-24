@@ -1,0 +1,18 @@
+# ProcureInsight AI - Requirements
+# Core framework
+streamlit>=1.28.0
+
+# Data processing
+pandas>=2.0.0
+numpy>=1.24.0
+
+# Database
+# SQLite is built into Python
+
+# Visualization
+plotly>=5.18.0
+
+# Optional: Vanna AI for text-to-SQL (requires API key)
+# vanna>=0.5.0
+# chromadb>=0.4.0
+# openai>=1.0.0
