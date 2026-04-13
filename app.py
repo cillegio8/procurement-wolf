@@ -13,6 +13,7 @@ import streamlit as st
 import sqlite3
 import os
 import sys
+import re
 
 # Add current directory to path
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -90,6 +91,57 @@ st.markdown("""
 DB_PATH = os.path.join(os.path.dirname(__file__), "data", "procurement.db")
 
 
+def load_password():
+    """Load password from user.md file."""
+    user_md_path = os.path.join(os.path.dirname(__file__), "user.md")
+    if os.path.exists(user_md_path):
+        with open(user_md_path, 'r') as f:
+            content = f.read()
+            # Extract password from markdown format "password: <value>"
+            match = re.search(r'password:\s*(\S+)', content)
+            if match:
+                return match.group(1)
+    return None
+
+
+def check_authentication():
+    """Check if user is authenticated. Returns True if authenticated, False otherwise."""
+    if "authenticated" not in st.session_state:
+        st.session_state.authenticated = False
+    
+    if not st.session_state.authenticated:
+        # Show login page
+        st.set_page_config(
+            page_title="ProcureInsight AI - Login",
+            page_icon="📊",
+            layout="centered"
+        )
+        
+        st.markdown('<h1 style="text-align: center; font-size: 2.5rem; margin-bottom: 2rem;">🔐 ProcureInsight</h1>', unsafe_allow_html=True)
+        st.markdown('<p style="text-align: center; font-size: 1.2rem; color: #666;">Sign in to continue</p>', unsafe_allow_html=True)
+        
+        st.divider()
+        
+        # Password input
+        password_input = st.text_input("Password", type="password", placeholder="Enter password")
+        
+        col1, col2, col3 = st.columns([1, 1, 1])
+        with col2:
+            if st.button("Sign In", use_container_width=True):
+                correct_password = load_password()
+                if password_input == correct_password:
+                    st.session_state.authenticated = True
+                    st.success("✅ Authentication successful!")
+                    st.rerun()
+                else:
+                    st.error("❌ Invalid password")
+        
+        st.stop()
+    
+    return True
+
+
+
 def check_database():
     """Check if database exists, create if not."""
     if not os.path.exists(DB_PATH):
@@ -115,10 +167,20 @@ def init_vanna():
 def main():
     """Main application entry point."""
     
+    # Check authentication first
+    check_authentication()
+    
     # Sidebar navigation
     with st.sidebar:
         st.markdown('<p class="main-header">📊 ProcureInsight</p>', unsafe_allow_html=True)
         st.markdown("**AI-Powered Procurement Analytics**")
+        st.divider()
+        
+        # Logout button
+        if st.button("🚪 Logout", use_container_width=True, key="logout"):
+            st.session_state.authenticated = False
+            st.rerun()
+        
         st.divider()
         
         # Navigation
