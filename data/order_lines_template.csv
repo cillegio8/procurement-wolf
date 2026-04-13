@@ -1,0 +1,6 @@
+order_id,line_name,line_description,unit_price,quantity,segment_code,family_code,class_code,unspsc_code
+1,Asfalt qarışığı,Açık asfalt qarışığı,500,100,22000000,22100000,22101600,ASPH001
+1,İnşaat paspu,Standart paspu,250,50,22000000,22100000,22101700,SPAT001
+2,Sement,M-400 markalı sement,90,400,22000000,22100000,22101700,CEM001
+3,Yol təmiri,Yolun təmiri və dayanağı,150,200,76000000,76120000,76122400,ROAD001
+4,Kompüter,Dell OptiPlex masaüstü, 1200,20,43000000,43210000,43211500,COMP001

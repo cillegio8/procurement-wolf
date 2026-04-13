@@ -21,6 +21,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from components.chat_interface import render_chat_interface, render_sql_playground
 from components.hhi_dashboard import render_hhi_dashboard, render_hhi_trends
 from components.spending_dashboard import render_spending_dashboard, render_vendor_analysis
+from components.data_import import render_data_import
 from utils.vanna_integration import ProcurementVanna
 
 # Page configuration
@@ -192,7 +193,8 @@ def main():
                 "📊 HHI Monitor",
                 "💰 Spending",
                 "👥 Vendors",
-                "🔧 SQL Playground"
+                "🔧 SQL Playground",
+                "📥 Import Data"
             ],
             label_visibility="collapsed"
         )
@@ -270,6 +272,9 @@ def main():
     
     elif page == "🔧 SQL Playground":
         render_sql_playground(DB_PATH)
+    
+    elif page == "📥 Import Data":
+        render_data_import()
 
 
 def render_overview(db_path: str):
