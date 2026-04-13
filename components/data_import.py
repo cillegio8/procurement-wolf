@@ -192,6 +192,8 @@ def import_parquet_files(orders_file, lines_file):
     import pandas as pd
     import sqlite3
     import sys
+    import io
+    from contextlib import redirect_stdout, redirect_stderr
     
     db_path = os.path.join(os.path.dirname(__file__), "../data/procurement.db")
     
@@ -207,7 +209,7 @@ def import_parquet_files(orders_file, lines_file):
             sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../data"))
             from import_parquet import import_from_parquet, parse_unspsc_code
             
-            # Write temp files
+            # Write temp files and capture output
             with tempfile.TemporaryDirectory() as tmpdir:
                 orders_path = os.path.join(tmpdir, "orders_v3.parquet")
                 lines_path = os.path.join(tmpdir, "order_lines-v3.parquet")
@@ -220,20 +222,31 @@ def import_parquet_files(orders_file, lines_file):
                 with open(lines_path, "wb") as f:
                     f.write(lines_file.read())
                 
-                # Run import
-                success = import_from_parquet(db_path, orders_path, lines_path)
+                # Capture output from import function
+                log_output = io.StringIO()
+                with redirect_stdout(log_output), redirect_stderr(log_output):
+                    success = import_from_parquet(db_path, orders_path, lines_path)
+                
+                logs = log_output.getvalue()
+            
+            # Display logs
+            if logs:
+                with st.expander("📋 Import Logs"):
+                    st.code(logs, language="plaintext")
         
         if success:
             st.success("✨ Import completed successfully!")
             st.balloons()
             st.rerun()
         else:
-            st.error("❌ Import failed. Check the logs above.")
+            st.error("❌ Import failed. See logs above for details.")
     
     except Exception as e:
         st.error(f"❌ Error during import: {str(e)}")
-        import traceback
-        st.code(traceback.format_exc(), language="python")
+        with st.expander("🐛 Error Details"):
+            import traceback
+            st.code(traceback.format_exc(), language="python")
+
 
 
 def import_csv_files(vendors_file, orders_file, lines_file):
@@ -279,8 +292,10 @@ def import_csv_files(vendors_file, orders_file, lines_file):
             st.success(f"✓ Imported {len(vendors_df)} vendors")
             
             # Import orders
+            imported_orders = 0
             for _, row in orders_df.iterrows():
-                vendor_id = vendor_id_map.get(row['vendor_name'])
+                vendor_name = row.get('vendor_name', '')
+                vendor_id = vendor_id_map.get(vendor_name)
                 if vendor_id:
                     cursor.execute("""
                         INSERT INTO procurement_orders (vendor_id, award_date, award_value, estimated_value)
@@ -291,41 +306,51 @@ def import_csv_files(vendors_file, orders_file, lines_file):
                         float(row.get('award_value', 0)),
                         float(row.get('estimated_value', 0))
                     ))
+                    imported_orders += 1
+                else:
+                    st.warning(f"⚠️ Vendor '{vendor_name}' not found in vendors list, skipping order")
             
             conn.commit()
-            st.success(f"✓ Imported {len(orders_df)} orders")
+            st.success(f"✓ Imported {imported_orders}/{len(orders_df)} orders")
             
             # Import line items
+            imported_lines = 0
             for _, row in lines_df.iterrows():
-                cursor.execute("""
-                    INSERT INTO order_lines 
-                    (order_id, line_name, line_description, unit_price, quantity, 
-                     segment_code, family_code, class_code, unspsc_code, line_total)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """, (
-                    int(row.get('order_id')),
-                    row.get('line_name', ''),
-                    row.get('line_description', ''),
-                    float(row.get('unit_price', 0)),
-                    float(row.get('quantity', 0)),
-                    row.get('segment_code', ''),
-                    row.get('family_code', ''),
-                    row.get('class_code', ''),
-                    row.get('unspsc_code', ''),
-                    float(row.get('unit_price', 0)) * float(row.get('quantity', 0))
-                ))
+                try:
+                    cursor.execute("""
+                        INSERT INTO order_lines 
+                        (order_id, line_name, line_description, unit_price, quantity, 
+                         segment_code, family_code, class_code, unspsc_code, line_total)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """, (
+                        int(row.get('order_id')),
+                        row.get('line_name', '')[:100],
+                        row.get('line_description', '')[:255],
+                        float(row.get('unit_price', 0)),
+                        float(row.get('quantity', 0)),
+                        row.get('segment_code', ''),
+                        row.get('family_code', ''),
+                        row.get('class_code', ''),
+                        row.get('unspsc_code', ''),
+                        float(row.get('unit_price', 0)) * float(row.get('quantity', 0))
+                    ))
+                    imported_lines += 1
+                except Exception as e:
+                    st.warning(f"⚠️ Skipped line item: {str(e)}")
             
             conn.commit()
             conn.close()
         
+        st.success(f"✓ Imported {imported_lines}/{len(lines_df)} line items")
         st.success("✨ Import completed successfully!")
         st.balloons()
         st.rerun()
     
     except Exception as e:
         st.error(f"❌ Error during import: {str(e)}")
-        import traceback
-        st.code(traceback.format_exc(), language="python")
+        with st.expander("🐛 Error Details"):
+            import traceback
+            st.code(traceback.format_exc(), language="python")
 
 
 def clear_database(db_path: str):

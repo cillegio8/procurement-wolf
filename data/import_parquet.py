@@ -78,6 +78,9 @@ def import_from_parquet(db_path: str, parquet_orders: str = None, parquet_lines:
         db_path: Path to SQLite database
         parquet_orders: Path to orders_v3.parquet (auto-detects if None)
         parquet_lines: Path to order_lines-v3.parquet (auto-detects if None)
+    
+    Returns:
+        True if successful, False otherwise
     """
     
     data_dir = os.path.dirname(db_path)
@@ -112,23 +115,43 @@ def import_from_parquet(db_path: str, parquet_orders: str = None, parquet_lines:
         print("❌ Parquet files not found!")
         print(f"   Looking for: orders_v3.parquet and order_lines-v3.parquet")
         print(f"   Tried: {data_dir} and /content/")
+        print(f"   parquet_orders: {parquet_orders}")
+        print(f"   parquet_lines: {parquet_lines}")
         return False
     
     try:
         # Read parquet files
         print("\n📥 Reading Parquet files...")
+        print(f"   Orders: {parquet_orders}")
+        print(f"   Lines: {parquet_lines}")
+        
         orders_df = pd.read_parquet(parquet_orders)
         lines_df = pd.read_parquet(parquet_lines)
         
         print(f"   ✓ Orders: {len(orders_df)} records")
         print(f"   ✓ Order Lines: {len(lines_df)} records")
         
+        # Verify database exists
+        if not os.path.exists(db_path):
+            print(f"\n❌ Database file not found: {db_path}")
+            return False
+        
         conn = sqlite3.connect(db_path)
         cursor = conn.cursor()
+        
+        # Verify tables exist
+        try:
+            cursor.execute("SELECT COUNT(*) FROM vendors")
+            cursor.execute("SELECT COUNT(*) FROM procurement_orders")
+            cursor.execute("SELECT COUNT(*) FROM order_lines")
+        except Exception as e:
+            print(f"\n❌ Database schema error: {str(e)}")
+            return False
         
         # Step 1: Extract unique vendors from orders
         print("\n👥 Processing vendors...")
         unique_vendors = orders_df['vendor_name'].unique()
+        print(f"   Found {len(unique_vendors)} unique vendors")
         
         # Calculate vendor metrics for type inference
         vendor_stats = {}
@@ -165,76 +188,85 @@ def import_from_parquet(db_path: str, parquet_orders: str = None, parquet_lines:
                 parsed = parse_unspsc_code(vendor_lines['unspcs_code'].iloc[0])
                 segment_code = parsed['segment_code']
             
-            cursor.execute("""
-                INSERT INTO vendors (vendor_name, vendor_type, registration_date, primary_segment, city)
-                VALUES (?, ?, ?, ?, ?)
-            """, (
-                vendor_name,
-                vendor_type,
-                datetime(2020, 1, 1).strftime("%Y-%m-%d"),
-                segment_code,
-                city
-            ))
-            
-            vendor_id_map[vendor_name] = cursor.lastrowid
+            try:
+                cursor.execute("""
+                    INSERT INTO vendors (vendor_name, vendor_type, registration_date, primary_segment, city)
+                    VALUES (?, ?, ?, ?, ?)
+                """, (
+                    vendor_name,
+                    vendor_type,
+                    datetime(2020, 1, 1).strftime("%Y-%m-%d"),
+                    segment_code,
+                    city
+                ))
+                vendor_id_map[vendor_name] = cursor.lastrowid
+            except Exception as e:
+                print(f"   ⚠️ Error inserting vendor '{vendor_name}': {str(e)}")
+                return False
         
         conn.commit()
         print(f"   ✓ Inserted {len(unique_vendors)} vendors")
         
         # Step 2: Insert procurement orders
         print("\n📝 Processing orders...")
-        for _, row in orders_df.iterrows():
-            vendor_id = vendor_id_map[row['vendor_name']]
+        for idx, (_, row) in enumerate(orders_df.iterrows()):
+            vendor_id = vendor_id_map.get(row['vendor_name'])
+            if not vendor_id:
+                print(f"   ⚠️ Vendor ID not found for {row['vendor_name']}, skipping order")
+                continue
             
-            cursor.execute("""
-                INSERT INTO procurement_orders (vendor_id, award_date, award_value, estimated_value)
-                VALUES (?, ?, ?, ?)
-            """, (
-                vendor_id,
-                row['award_date'],
-                float(row['award_value']),
-                float(row['estimated_value'])
-            ))
+            try:
+                cursor.execute("""
+                    INSERT INTO procurement_orders (vendor_id, award_date, award_value, estimated_value)
+                    VALUES (?, ?, ?, ?)
+                """, (
+                    vendor_id,
+                    row['award_date'],
+                    float(row['award_value']),
+                    float(row['estimated_value'])
+                ))
+            except Exception as e:
+                print(f"   ⚠️ Error inserting order {idx}: {str(e)}")
         
         conn.commit()
-        print(f"   ✓ Inserted {len(orders_df)} orders")
+        print(f"   ✓ Inserted {cursor.rowcount} orders")
         
         # Step 3: Insert order line items
         print("\n📦 Processing line items...")
         
-        # Get mapping of order_id to database order_id
-        cursor.execute("SELECT order_id FROM procurement_orders WHERE order_id IN (SELECT order_id FROM procurement_orders)")
-        db_order_ids = {row[0]: row[0] for row in cursor.fetchall()}
-        
-        for _, row in lines_df.iterrows():
-            order_id = row['order_id']
-            
-            # Parse UNSPSC code
-            unspsc_info = parse_unspsc_code(row['unspcs_code'])
-            
-            # Calculate line total
-            line_total = float(row['unit_price']) * float(row['quantity'])
-            
-            cursor.execute("""
-                INSERT INTO order_lines 
-                (order_id, line_name, line_description, unit_price, quantity, 
-                 segment_code, family_code, class_code, unspsc_code, line_total)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """, (
-                order_id,
-                row['line_name'][:100] if len(str(row['line_name'])) > 100 else row['line_name'],
-                row['line_description'][:255] if len(str(row['line_description'])) > 255 else row['line_description'],
-                float(row['unit_price']),
-                float(row['quantity']),
-                unspsc_info['segment_code'],
-                unspsc_info['family_code'],
-                unspsc_info['class_code'],
-                unspsc_info['unspsc_code'],
-                line_total
-            ))
+        for idx, (_, row) in enumerate(lines_df.iterrows()):
+            try:
+                order_id = row['order_id']
+                
+                # Parse UNSPSC code
+                unspsc_info = parse_unspsc_code(row['unspcs_code'])
+                
+                # Calculate line total
+                line_total = float(row['unit_price']) * float(row['quantity'])
+                
+                cursor.execute("""
+                    INSERT INTO order_lines 
+                    (order_id, line_name, line_description, unit_price, quantity, 
+                     segment_code, family_code, class_code, unspsc_code, line_total)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """, (
+                    order_id,
+                    str(row['line_name'])[:100],
+                    str(row['line_description'])[:255],
+                    float(row['unit_price']),
+                    float(row['quantity']),
+                    unspsc_info['segment_code'],
+                    unspsc_info['family_code'],
+                    unspsc_info['class_code'],
+                    unspsc_info['unspsc_code'],
+                    line_total
+                ))
+            except Exception as e:
+                if idx < 10:  # Only print first 10 errors to avoid spam
+                    print(f"   ⚠️ Error at row {idx}: {str(e)}")
         
         conn.commit()
-        print(f"   ✓ Inserted {len(lines_df)} line items")
+        print(f"   ✓ Inserted line items")
         
         # Summary
         cursor.execute("SELECT COUNT(*) FROM vendors")
