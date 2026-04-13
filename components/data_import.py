@@ -18,14 +18,13 @@ def render_data_import():
     st.divider()
     
     # Introduction
-    with st.info():
-        st.markdown("""
-        Upload your procurement data files to import into the system.
-        
-        **Supported formats:**
-        - 🔹 **Parquet files** (recommended): `orders_v3.parquet` and `order_lines-v3.parquet`
-        - 📄 **CSV files**: `vendors.csv`, `procurement_orders.csv`, `order_lines.csv`
-        """)
+    st.info("""
+    Upload your procurement data files to import into the system.
+    
+    **Supported formats:**
+    - 🔹 **Parquet files** (recommended): `orders_v3.parquet` and `order_lines-v3.parquet`
+    - 📄 **CSV files**: `vendors.csv`, `procurement_orders.csv`, `order_lines.csv`
+    """)
     
     # Tabs for different import methods
     tab1, tab2, tab3 = st.tabs(["📦 Parquet Import", "📄 CSV Import", "ℹ️ Format Guide"])
